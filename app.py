@@ -9,13 +9,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-# Tenta importar o leitor de Data Matrix (se já estiver instalado no servidor)
-try:
-    from pylibdmtx.pylibdmtx import decode as decode_datamatrix
-    DMTX_DISPONIVEL = True
-except ImportError:
-    DMTX_DISPONIVEL = False
-
 # Configuração visual da página
 st.set_page_config(page_title="Validador de Etiquetas", page_icon="🏷️", layout="centered")
 
@@ -24,7 +17,6 @@ st.markdown("Desenvolvido para o **Time de Processos** | Validação ágil de la
 
 # Função para disparar o e-mail de histórico
 def enviar_email_historico(status, nome_arquivo, conteudo_codigo, texto_devolutiva):
-    # Verifica se o usuário configurou as credenciais secretas no Streamlit Cloud
     if "email" in st.secrets:
         try:
             remetente = st.secrets["email"]["usuario"]
@@ -33,7 +25,6 @@ def enviar_email_historico(status, nome_arquivo, conteudo_codigo, texto_devoluti
             smtp_server = st.secrets["email"]["smtp_server"]
             smtp_port = int(st.secrets["email"]["smtp_port"])
             
-            # Monta o e-mail
             msg = MIMEMultipart()
             msg['From'] = remetente
             msg['To'] = destinatario
@@ -52,7 +43,6 @@ DEVOLUTIVA GERADA:
 """
             msg.attach(MIMEText(corpo_email, 'plain', 'utf-8'))
             
-            # Conecta e envia
             server = smtplib.SMTP(smtp_server, smtp_port)
             server.starttls()
             server.login(remetente, senha)
@@ -87,12 +77,19 @@ if arquivo_etiqueta is not None:
             texto_codigo = codigos_barras[0].data.decode('utf-8').upper()
             tipo_codigo_detectado = "Código de Barras"
             
-        # 2. AJUSTE DO 2° PONTO: TENTA LER DATA MATRIX (Caso não tenha achado código de barras)
-        elif DMTX_DISPONIVEL:
-            codigos_dmtx = decode_datamatrix(img)
-            if codigos_dmtx:
-                texto_codigo = codigos_dmtx[0].data.decode('utf-8').upper()
-                tipo_codigo_detectado = "Data Matrix"
+        # 2. TENTA LER DATA MATRIX USANDO O OPENCV NATIVO (Sem dependências externas)
+        else:
+            try:
+                detector_dmtx = cv2.DataMatrixDetector()
+                resultado_dmtx, _ = detector_dmtx.detectAndDecode(img)
+                if resultado_dmtx:
+                    if isinstance(resultado_dmtx, (list, tuple)):
+                        texto_codigo = resultado_dmtx[0].upper()
+                    else:
+                        texto_codigo = resultado_dmtx.upper()
+                    tipo_codigo_detectado = "Data Matrix"
+            except Exception:
+                pass
         
         # 3. LEITURA DO LAYOUT (OCR)
         img_cinza = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -103,12 +100,10 @@ if arquivo_etiqueta is not None:
         erros = []
         modo_analise = ""
         
-        # Validação se houver algum código (Barras ou Data Matrix)
         if texto_codigo:
             modo_analise = f"{tipo_codigo_detectado} + Layout"
             st.info(f"**Modo de Análise:** {modo_analise} | **Conteúdo do Código:** {texto_codigo}")
             
-            # Regra para códigos numéricos longos (padrão de volumes)
             if texto_codigo.isdigit() and len(texto_codigo) >= 8:
                 id_extraido = texto_codigo[:-4]
                 vol_extraido_completo = texto_codigo[-4:]
@@ -127,7 +122,6 @@ if arquivo_etiqueta is not None:
                 if not tem_volume:
                     erros.append(f"Contador de volumes não identificado no {tipo_codigo_detectado}.")
                     
-        # AJUSTE DO 1° PONTO: Sem código de barras ou Data Matrix (Validação por Texto Puro)
         else:
             modo_analise = "Apenas Layout (Etiqueta do cliente não possui código de barras ou Data Matrix)"
             st.warning(f"**Modo de Análise:** {modo_analise}")
@@ -140,7 +134,6 @@ if arquivo_etiqueta is not None:
             if not tem_volume_layout:
                 erros.append("Não foi encontrado o contador de volumes (ex: VOL, VOLUME ou '/') impresso no layout da etiqueta.")
 
-        # Veredito Final
         if not erros:
             veredit_status = "APROVADA"
             texto_sucesso = f"### 🟢 ETIQUETA HOMOLOGADA!\nTodos os critérios mínimos para o modo [{modo_analise}] foram atendidos com sucesso."
@@ -168,12 +161,12 @@ Identificamos que a etiqueta enviada não atende aos requisitos mínimos de homo
                 texto_final_devolutiva += f"\n  - {erro}"
 
             if observacao_manual:
-                texto_final_devolutiva += f"\n\n• Particularidade identificada pelo auditor: {observacao_manual}"
+                texto_devolutiva += f"\n\n• Particularidade identificada pelo auditor: {observacao_manual}"
 
             texto_final_devolutiva += """
 
 💡 Como corrigir para homologar:
-Para que a etiqueta do cliente seja homologada no sistema, a descrição interna do código de barras/Data Matrix (or o texto impresso do layout, caso não utilize código) deve conter obrigatoriamente pelo menos um desses três dados (NF, Pedido ou Remessa), além do contador de volumes.
+Para que a etiqueta do cliente seja homologada no sistema, a descrição interna do código de barras/Data Matrix (ou o texto impresso do layout, caso não utilize código) deve conter obrigatoriamente pelo menos um desses três dados (NF, Pedido ou Remessa), além do contador de volumes.
 
 Por favor, ajuste a configuração no seu sistema emissor e envie uma nova imagem para validação.
 
@@ -182,7 +175,6 @@ Time de Processos"""
             
             st.text_area("Bloco de Notas (Pronto para envio):", value=texto_final_devolutiva, height=350)
         
-        # Dispara o e-mail de histórico em segundo plano
         if "email" in st.secrets:
             enviou = enviar_email_historico(veredit_status, arquivo_etiqueta.name, texto_codigo, texto_final_devolutiva)
             if enviou:
