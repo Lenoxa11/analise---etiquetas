@@ -1,2 +1,3 @@
-Plaintext
-pylibdmtx
+tesseract-ocr
+tesseract-ocr-por
+libzbar0
