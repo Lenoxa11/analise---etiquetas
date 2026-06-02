@@ -66,19 +66,19 @@ if arquivo_etiqueta is not None:
     
     st.image(img, caption="Etiqueta Enviada", use_container_width=True)
     
-    # VARIÁVEIS DE CONTROLE
+    # Variáveis de controle de leitura
     texto_codigo = ""
     tipo_codigo_detectado = "Nenhum"
     texto_layout = ""
     
-    # APENAS O PROCESSAMENTO PESADO FICA DENTRO DO CARREGAMENTO
+    # Processamento pesado em segundo plano
     with st.spinner("Auditando etiqueta..."):
         # 1. Tenta ler código de barras tradicional
         codigos_barras = decode(img)
         if codigos_barras:
             texto_codigo = codigos_barras[0].data.decode('utf-8').upper()
             tipo_codigo_detectado = "Código de Barras"
-        # 2. Tenta ler Data Matrix nativo
+        # 2. Tenta ler Data Matrix nativo do OpenCV
         else:
             try:
                 detector_dmtx = cv2.DataMatrixDetector()
@@ -92,11 +92,11 @@ if arquivo_etiqueta is not None:
             except Exception:
                 pass
         
-        # 3. Leitura do texto do layout
+        # 3. Leitura do layout (OCR)
         img_cinza = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         texto_layout = pytesseract.image_to_string(img_cinza, lang='por').upper()
         
-    # --- DAQUI PARA BAIXO O CARREGAMENTO JÁ SUMIU (ZONA SEGURA VISUAL) ---
+    # --- Zona de renderização visual segura ---
     st.subheader("2. Resultado da Auditoria")
     erros = []
     modo_analise = ""
@@ -135,7 +135,7 @@ if arquivo_etiqueta is not None:
         if not tem_volume_layout:
             erros.append("Não foi encontrado o contador de volumes (ex: VOL, VOLUME ou '/') impresso no layout da etiqueta.")
 
-    # Exibição dos resultados e blocos de texto
+    # Exibição do Veredito e da Devolutiva Corrigida
     if not erros:
         veredit_status = "APROVADA"
         st.success(f"### 🟢 ETIQUETA HOMOLOGADA!\nTodos os critérios mínimos para o modo [{modo_analise}] foram atendidos com sucesso.")
@@ -153,7 +153,7 @@ if arquivo_etiqueta is not None:
 
 Prezado Cliente,
 
-Identificamos que a etiqueta enviada não atende aos requisitos mínimos de homologação e precisará ser adjusted.
+Identificamos que a etiqueta enviada não atende aos requisitos mínimos de homologação e precisará ser ajustada.
 
 • Tipo de Análise realizada: {modo_analise}
 • Falhas Identificadas:"""
@@ -162,6 +162,7 @@ Identificamos que a etiqueta enviada não atende aos requisitos mínimos de homo
             texto_final_devolutiva += f"\n  - {erro}"
 
         if observacao_manual:
+            # CORREÇÃO DA VARIÁVEL AQUI:
             texto_final_devolutiva += f"\n\n• Particularidade identificada pelo auditor: {observacao_manual}"
 
         texto_final_devolutiva += """
@@ -176,7 +177,7 @@ Time de Processos"""
         
         st.text_area("Bloco de Notas (Pronto para envio):", value=texto_final_devolutiva, height=350)
     
-    # Envio do e-mail em segundo plano
+    # Envio do e-mail de histórico
     if "email" in st.secrets:
         enviou = enviar_email_historico(veredit_status, arquivo_etiqueta.name, texto_codigo, texto_final_devolutiva)
         if enviou:
