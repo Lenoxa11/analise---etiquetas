@@ -77,7 +77,7 @@ if arquivo_etiqueta is not None:
             texto_codigo = codigos_barras[0].data.decode('utf-8').upper()
             tipo_codigo_detectado = "Código de Barras"
             
-        # 2. TENTA LER DATA MATRIX USANDO O OPENCV NATIVO (Sem dependências externas)
+        # 2. TENTA LER DATA MATRIX USANDO O OPENCV NATIVO
         else:
             try:
                 detector_dmtx = cv2.DataMatrixDetector()
@@ -161,7 +161,7 @@ Identificamos que a etiqueta enviada não atende aos requisitos mínimos de homo
                 texto_final_devolutiva += f"\n  - {erro}"
 
             if observacao_manual:
-                texto_devolutiva += f"\n\n• Particularidade identificada pelo auditor: {observacao_manual}"
+                texto_final_devolutiva += f"\n\n• Particularidade identificada pelo auditor: {observacao_manual}"
 
             texto_final_devolutiva += """
 
