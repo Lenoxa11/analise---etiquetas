@@ -1,3 +1,4 @@
-tesseract-ocr
-tesseract-ocr-por
-libzbar0
+streamlit
+opencv-python-headless
+pyzbar
+pytesseract
