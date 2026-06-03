@@ -13,7 +13,7 @@ from datetime import datetime
 st.set_page_config(page_title="Validador de Etiquetas", page_icon="🏷️", layout="centered")
 
 st.title("🏷️ Sistema de Auditoria de Etiquetas")
-st.markdown("Desenvolvido para o **Time de Processos** | Validação ágil de layouts e códigos.")
+st.markdown("Desenvolvido para o **Time de Processos** | Análise e leitura de layouts.")
 
 # Função para disparar o e-mail de histórico
 def enviar_email_historico(status, nome_arquivo, conteudo_codigo, texto_devolutiva):
@@ -28,7 +28,7 @@ def enviar_email_historico(status, nome_arquivo, conteudo_codigo, texto_devoluti
             msg = MIMEMultipart()
             msg['From'] = remetente
             msg['To'] = destinatario
-            msg['Subject'] = f"[{status}] Auditoria de Etiqueta - {nome_arquivo}"
+            msg['Subject'] = f"[{status}] Análise de Etiqueta - {nome_arquivo}"
             
             corpo_email = f"""Histórico de Auditoria de Etiqueta
 Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
@@ -37,7 +37,7 @@ Status: {status}
 Conteúdo do Código Lido: {conteudo_codigo if conteudo_codigo else 'Nenhum'}
 
 --------------------------------------------------
-DEVOLUTIVA GERADA:
+PARECER GERADO:
 --------------------------------------------------
 {texto_devolutiva}
 """
@@ -54,11 +54,11 @@ DEVOLUTIVA GERADA:
     return False
 
 # 1. Painel de Entrada de Dados
-st.subheader("1. Upload e Particularidades")
+st.subheader("1. Upload de Arquivo")
 arquivo_etiqueta = st.file_uploader("Arraste ou selecione a imagem da etiqueta (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"])
 
 observacao_manual = st.text_area("Particularidade ou Observação Manual (Opcional):", 
-                                  placeholder="Ex: Nota Fiscal consta no layout, mas divergiu do XML físico recebido.")
+                                  placeholder="Digite aqui qualquer detalhe extra identificado visualmente.")
 
 if arquivo_etiqueta is not None:
     file_bytes = np.asarray(bytearray(arquivo_etiqueta.read()), dtype=np.uint8)
@@ -66,19 +66,18 @@ if arquivo_etiqueta is not None:
     
     st.image(img, caption="Etiqueta Enviada", use_container_width=True)
     
-    # Variáveis de controle de leitura
     texto_codigo = ""
     tipo_codigo_detectado = "Nenhum"
     texto_layout = ""
     
     # Processamento pesado em segundo plano
-    with st.spinner("Auditando etiqueta..."):
+    with st.spinner("Analisando layout da etiqueta..."):
         # 1. Tenta ler código de barras tradicional
         codigos_barras = decode(img)
         if codigos_barras:
             texto_codigo = codigos_barras[0].data.decode('utf-8').upper()
             tipo_codigo_detectado = "Código de Barras"
-        # 2. Tenta ler Data Matrix nativo do OpenCV
+        # 2. Tenta ler Data Matrix nativo
         else:
             try:
                 detector_dmtx = cv2.DataMatrixDetector()
@@ -96,14 +95,13 @@ if arquivo_etiqueta is not None:
         img_cinza = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         texto_layout = pytesseract.image_to_string(img_cinza, lang='por').upper()
         
-    # --- Zona de renderização visual segura ---
-    st.subheader("2. Resultado da Auditoria")
+    # --- Nova Zona Visual Segura e Neutra ---
+    st.subheader("2. Relatório de Conformidade")
     erros = []
-    modo_analise = ""
     
     if texto_codigo:
         modo_analise = f"{tipo_codigo_detectado} + Layout"
-        st.info(f"**Modo de Análise:** {modo_analise} | **Conteúdo do Código:** {texto_codigo}")
+        st.markdown(f"**Método de Verificação:** {modo_analise}  \n**Conteúdo Estrutural Lido:** `{texto_codigo}`")
         
         if texto_codigo.isdigit() and len(texto_codigo) >= 8:
             id_extraido = texto_codigo[:-4]
@@ -111,74 +109,63 @@ if arquivo_etiqueta is not None:
             vol_extraido_limpo = str(int(vol_extraido_completo))
             
             if id_extraido not in texto_layout:
-                erros.append(f"O número identificador '{id_extraido}' do código não foi encontrado impresso no layout.")
+                erros.append(f"O número identificador '{id_extraido}' do código não consta no texto impresso.")
             if (vol_extraido_completo not in texto_layout) and (vol_extraido_limpo not in texto_layout):
-                erros.append(f"Contador de volumes '{vol_extraido_completo}' do código não encontrado impresso no layout.")
+                erros.append(f"O contador de volumes '{vol_extraido_completo}' do código não consta no texto impresso.")
         else:
             tem_identificador = any(termo in texto_codigo for termo in ["NF", "PEDIDO", "REM", "REMANEJO", "NFE"]) or len(re.findall(r'\d{4,}', texto_codigo)) > 0
             tem_volume = any(termo in texto_codigo for termo in ["/", "VOL", "VLM"])
             
             if not tem_identificador:
-                erros.append(f"Falta identificador obrigatório (NF, Pedido ou Remessa) no {tipo_codigo_detectado}.")
+                erros.append(f"Falta identificador (NF, Pedido ou Remessa) nas informações internas do {tipo_codigo_detectado}.")
             if not tem_volume:
-                erros.append(f"Contador de volumes não identificado no {tipo_codigo_detectado}.")
+                erros.append(f"Contador de volumes não mapeado dentro do {tipo_codigo_detectado}.")
                 
     else:
-        modo_analise = "Apenas Layout (Etiqueta do cliente não possui código de barras ou Data Matrix)"
-        st.warning(f"**Modo de Análise:** {modo_analise}")
+        modo_analise = "Apenas Layout (Etiqueta sem código de barras/Data Matrix detectado)"
+        st.markdown(f"**Método de Verificação:** {modo_analise}")
         
         tem_identificador_layout = any(termo in texto_layout for termo in ["NF", "NOTA FISCAL", "PEDIDO", "REMESSA", "REM", "NFE"]) or len(re.findall(r'\d{4,}', texto_layout)) > 0
         tem_volume_layout = any(termo in texto_layout for termo in ["/", "VOL", "VOLUME", "VLM", "QTD", "CONTADOR"])
         
         if not tem_identificador_layout:
-            erros.append("Não foi encontrado nenhum identificador obrigatório (NF, Nota Fiscal, Pedido ou Remessa) impresso no layout da etiqueta.")
+            erros.append("Não foi encontrado nenhum identificador padrão (NF, Nota Fiscal, Pedido ou Remessa) impresso no layout.")
         if not tem_volume_layout:
-            erros.append("Não foi encontrado o contador de volumes (ex: VOL, VOLUME ou '/') impresso no layout da etiqueta.")
+            erros.append("Não foi encontrado o indicador de volume (ex: VOL, VOLUME ou '/') impresso no layout.")
 
-    # Exibição do Veredito e da Devolutiva Corrigida
+    # --- Nova Apresentação Neutra dos Resultados ---
     if not erros:
-        veredit_status = "APROVADA"
-        st.success(f"### 🟢 ETIQUETA HOMOLOGADA!\nTodos os critérios mínimos para o modo [{modo_analise}] foram atendidos com sucesso.")
+        veredit_status = "CONFORME"
+        st.info("ℹ️ **Status:** Nenhuma inconsistência estrutural foi encontrada entre os códigos e o texto do layout.")
         
-        texto_final_devolutiva = "Etiqueta aprovada com sucesso pelo Time de Processos."
+        texto_final_devolutiva = "Parecer Técnico: Layout processado. Nenhuma inconformidade estrutural foi identificada."
         if observacao_manual:
-            st.warning(f"**Nota de Processos:** {observacao_manual}")
-            texto_final_devolutiva += f"\nNota Adicional: {observacao_manual}"
+            st.markdown(f"**Nota Adicional do Auditor:** {observacao_manual}")
+            texto_final_devolutiva += f"\n\n• Observações extras: {observacao_manual}"
     else:
-        veredit_status = "REPROVADA"
-        st.error("### 🔴 ETIQUETA REPROVADA")
-        st.markdown("Copie o texto abaixo para enviar ao solicitante:")
+        veredit_status = "COM APONTAMENTOS"
+        st.markdown("### 📋 Parecer Técnico Gerado")
         
-        texto_final_devolutiva = f"""📢 COMUNICADO DE REPROVAÇÃO DE ETIQUETA
+        texto_final_devolutiva = f"""📢 PARECER TÉCNICO DE LAYOUT
 
-Prezado Cliente,
+Abaixo constam os apontamentos gerados pela verificação automática das informações do arquivo enviado:
 
-Identificamos que a etiqueta enviada não atende aos requisitos mínimos de homologação e precisará ser ajustada.
-
-• Tipo de Análise realizada: {modo_analise}
-• Falhas Identificadas:"""
+• Modo de Análise: {modo_analise}
+• Pontos de Atenção Identificados:"""
         
         for erro in erros:
             texto_final_devolutiva += f"\n  - {erro}"
 
         if observacao_manual:
-            # CORREÇÃO DA VARIÁVEL AQUI:
-            texto_final_devolutiva += f"\n\n• Particularidade identificada pelo auditor: {observacao_manual}"
+            texto_final_devolutiva += f"\n\n• Particularidades observadas pelo auditor: {observacao_manual}"
 
         texto_final_devolutiva += """
 
-💡 Como corrigir para homologar:
-Para que a etiqueta do cliente seja homologada no sistema, a descrição interna do código de barras/Data Matrix (ou o texto impresso do layout, caso não utilize código) deve conter obrigatoriamente pelo menos um desses três dados (NF, Pedido ou Remessa), além do contador de volumes.
-
-Por favor, ajuste a configuração no seu sistema emissor e envie uma nova imagem para validação.
-
-Atenciosamente,
-Time de Processos"""
+💡 Recomendação de Ajuste:
+Alinhar as divergências apontadas acima diretamente nas configurações do sistema emissor para garantir a integridade dos dados impressos."""
         
-        st.text_area("Bloco de Notas (Pronto para envio):", value=texto_final_devolutiva, height=350)
+        st.text_area("Relatório Técnico (Pronto para cópia/envio):", value=texto_final_devolutiva, height=320)
     
-    # Envio do e-mail de histórico
+    # Dispara o e-mail de histórico com o novo status neutro
     if "email" in st.secrets:
-        enviou = enviar_email_historico(veredit_status, arquivo_etiqueta.name, texto_codigo, texto_final_devolutiva)
-        if enviou:
-            st.caption("📧 Histórico enviado para o seu e-mail com sucesso!")
+        enviar_email_historico(veredit_status, arquivo_etiqueta.name, texto_codigo, texto_final_devolutiva)
