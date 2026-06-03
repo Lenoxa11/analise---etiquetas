@@ -70,7 +70,7 @@ if arquivo_etiqueta is not None:
     tipo_codigo_detectado = "Nenhum"
     texto_layout = ""
     
-    # Processamento pesado em segundo plano
+    # Processamento pesado em segundo plano (OCR e Códigos)
     with st.spinner("Analisando layout da etiqueta..."):
         # 1. Tenta ler código de barras tradicional
         codigos_barras = decode(img)
@@ -95,13 +95,52 @@ if arquivo_etiqueta is not None:
         img_cinza = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         texto_layout = pytesseract.image_to_string(img_cinza, lang='por').upper()
         
-    # --- Nova Zona Visual Segura e Neutra ---
-    st.subheader("2. Relatório de Conformidade")
+    # --- MOTOR DE EXTRAÇÃO DE DADOS (NOVA FUNÇÃO) ---
+    nf_encontrada = "Não identificada"
+    pedido_encontrado = "Não identificado"
+    volume_encontrado = "Não identificado"
+
+    # Captura padrões de NF (ex: NF: 123456 ou NFE 1234)
+    nf_busca = re.search(r'(?:NF|NOTA\s+FISCAL|NFE)[\s\.:]*([0-9\.-]+)', texto_layout)
+    if nf_busca:
+        nf_encontrada = nf_busca.group(1).strip()
+    else:
+        # Se não achar a palavra NF, busca um bloco numérico longo comum de NF (5 a 9 dígitos)
+        numeros_longos = re.findall(r'\b\d{5,9}\b', texto_layout)
+        if numeros_longos:
+            nf_encontrada = numeros_longos[0]
+
+    # Captura padrões de Pedido ou Remessa
+    pedido_busca = re.search(r'(?:PEDIDO|REMESSA|REM|PED)[\s\.:]*([0-9A-Z\.-]+)', texto_layout)
+    if pedido_busca:
+        pedido_encontrado = pedido_busca.group(1).strip()
+
+    # Captura padrões de Volume (ex: VOL: 1/2 ou 001/002)
+    vol_busca = re.search(r'(?:VOL|VOLUME|VLM)[\s\.:]*([0-9\s\/]+)', texto_layout)
+    if vol_busca:
+        volume_encontrado = vol_busca.group(1).strip()
+    else:
+        vol_barra = re.search(r'(\d+\s*[\/]\s*\d+)', texto_layout)
+        if vol_barra:
+            volume_encontrado = vol_barra.group(1).strip()
+
+    # --- Exibição do Painel de Dados Extraídos ---
+    st.subheader("2. Dados Identificados no Layout (Texto)")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(label="📄 Nota Fiscal (NF)", value=nf_encontrada)
+    with col2:
+        st.metric(label="📦 Pedido / Remessa", value=pedido_encontrado)
+    with col3:
+        st.metric(label="📊 Volume", value=volume_encontrado)
+
+    # --- Relatório de Conformidade Estrutural ---
+    st.subheader("3. Relatório de Conformidade")
     erros = []
     
     if texto_codigo:
         modo_analise = f"{tipo_codigo_detectado} + Layout"
-        st.markdown(f"**Método de Verificação:** {modo_analise}  \n**Conteúdo Estrutural Lido:** `{texto_codigo}`")
+        st.markdown(f"**Método de Verificação:** {modo_analise}  \n**Conteúdo Estrutural do Código:** `{texto_codigo}`")
         
         if texto_codigo.isdigit() and len(texto_codigo) >= 8:
             id_extraido = texto_codigo[:-4]
@@ -133,15 +172,26 @@ if arquivo_etiqueta is not None:
         if not tem_volume_layout:
             erros.append("Não foi encontrado o indicador de volume (ex: VOL, VOLUME ou '/') impresso no layout.")
 
-    # --- Nova Apresentação Neutra dos Resultados ---
+    # Apresentação Final Neutra
     if not erros:
         veredit_status = "CONFORME"
         st.info("ℹ️ **Status:** Nenhuma inconsistência estrutural foi encontrada entre os códigos e o texto do layout.")
         
-        texto_final_devolutiva = "Parecer Técnico: Layout processado. Nenhuma inconformidade estrutural foi identificada."
+        texto_final_devolutiva = f"""📢 PARECER TÉCNICO DE LAYOUT - CONFORME
+
+O arquivo enviado foi processado com sucesso.
+
+• NF Identificada: {nf_encontrada}
+• Pedido/Remessa: {pedido_encontrado}
+• Volume Mapeado: {volume_encontrado}
+
+Nenhuma inconformidade estrutural foi identificada."""
+        
         if observacao_manual:
             st.markdown(f"**Nota Adicional do Auditor:** {observacao_manual}")
             texto_final_devolutiva += f"\n\n• Observações extras: {observacao_manual}"
+            
+        st.text_area("Relatório Técnico (Pronto para cópia/envio):", value=texto_final_devolutiva, height=200)
     else:
         veredit_status = "COM APONTAMENTOS"
         st.markdown("### 📋 Parecer Técnico Gerado")
@@ -151,6 +201,10 @@ if arquivo_etiqueta is not None:
 Abaixo constam os apontamentos gerados pela verificação automática das informações do arquivo enviado:
 
 • Modo de Análise: {modo_analise}
+• NF Identificada: {nf_encontrada}
+• Pedido/Remessa: {pedido_encontrado}
+• Volume Mapeado: {volume_encontrado}
+
 • Pontos de Atenção Identificados:"""
         
         for erro in erros:
@@ -166,6 +220,6 @@ Alinhar as divergências apontadas acima diretamente nas configurações do sist
         
         st.text_area("Relatório Técnico (Pronto para cópia/envio):", value=texto_final_devolutiva, height=320)
     
-    # Dispara o e-mail de histórico com o novo status neutro
+    # Dispara o e-mail de histórico
     if "email" in st.secrets:
         enviar_email_historico(veredit_status, arquivo_etiqueta.name, texto_codigo, texto_final_devolutiva)
