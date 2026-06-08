@@ -14,22 +14,6 @@ st.set_page_config(page_title="Validador de Etiquetas", page_icon="🏷️", lay
 
 st.title("🏷️ Sistema de Auditoria de Etiquetas")
 st.markdown("Desenvolvido para o **Time de Processos** | Análise e leitura de layouts.")
-import streamlit as st
-import cv2
-from pyzbar.pyzbar import decode
-import pytesseract
-import re
-import numpy as np
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime
-
-# Configuração visual da página
-st.set_page_config(page_title="Validador de Etiquetas", page_icon="🏷️", layout="centered")
-
-st.title("🏷️ Sistema de Auditoria de Etiquetas")
-st.markdown("Desenvolvido para o **Time de Processos** | Análise e leitura de layouts.")
 
 # Função para disparar o e-mail de histórico
 def enviar_email_historico(status, nome_arquivo, codigos_listados, texto_devolutiva):
